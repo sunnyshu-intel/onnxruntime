@@ -135,8 +135,11 @@ if (NOT WIN32)
 endif()
 
 
-# strip binary on Android, or for a minimal build on Unix
 if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR (onnxruntime_MINIMAL_BUILD AND UNIX))
+  target_sources(onnxruntime PRIVATE "${ONNXRUNTIME_ROOT}/core/so/cxa_demangle.cc")
+  target_compile_definitions(onnxruntime PRIVATE USE_DUMMY_EXA_DEMANGLE=1)
+
+  # strip binary on Android, or for a minimal build on Unix
   if (onnxruntime_MINIMAL_BUILD AND ADD_DEBUG_INFO_TO_MINIMAL_BUILD)
     # don't strip
   else()
