@@ -267,6 +267,27 @@ namespace Dml
             return Status::OK();
         }
 
+        virtual void LegalizeSessionOptions(onnxruntime::SessionOptions& so) final override
+        {
+            // DML's memory is not byte addressable and hence mem pattern doesn't work.
+            if (session_options_.enable_mem_pattern)
+            {
+                LOGS(*session_logger_, WARNING)
+                    << "Having memory pattern enabled is not supported while using the DML Execution Provider. "
+                    << "So disabling it for this session since it uses the DML Execution Provider.";
+                session_options_.enable_mem_pattern = false;
+            }
+
+            // Parallel execution mode does not support DML EP
+            if (session_options_.execution_mode != ExecutionMode::ORT_SEQUENTIAL)
+            {
+                LOGS(*session_logger_, WARNING)
+                    << "Parallel execution mode does not support the DML Execution Provider. "
+                    << "So making the execution mode sequential for this session since it uses the DML Execution Provider.";
+                session_options_.execution_mode = ExecutionMode::ORT_SEQUENTIAL;
+            }
+        }
+
         void Flush()
         {
             return m_impl->Flush();

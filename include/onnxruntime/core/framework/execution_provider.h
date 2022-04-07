@@ -298,6 +298,16 @@ class IExecutionProvider {
     return static_cast<DataLayout>(0);
   }
 
+  /** Some session option values (default or user provided) may not work with some EPs.
+   * The EP should alter the SessionOptions object fit its implementation to avoid potential crash.
+   * Rather than put the onus on the user to know these, make the appropriate change while logging the change.
+   *
+   * @param so The SessionOptions object to be altered
+   */
+  virtual void LegalizeSessionOptions(SessionOptions& so) {
+    ORT_UNUSED_PARAMETER(so);
+  }
+
  private:
   const std::string type_;
   AllocatorMap allocators_;
