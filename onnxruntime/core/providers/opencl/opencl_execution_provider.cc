@@ -165,20 +165,33 @@ Status OpenCLExecutionProvider::InitOpenCLContext() {
     return ret;
   };
 
-  auto device_name = GetDeviceInfo(dev_, CL_DEVICE_NAME);
-  LOGS_DEFAULT(INFO) << "[CL] device name: " << device_name;
+  dev_info_.device_name = GetDeviceInfo(dev_, CL_DEVICE_NAME);
+  LOGS_DEFAULT(INFO) << "[CL] device name: " << dev_info_.device_name;
   LOGS_DEFAULT(VERBOSE) << "[CL] device vendor: " << GetDeviceInfo(dev_, CL_DEVICE_VENDOR);
   LOGS_DEFAULT(VERBOSE) << "[CL] device version: " << GetDeviceInfo(dev_, CL_DEVICE_VERSION);
   auto exts = GetDeviceInfo(dev_, CL_DEVICE_EXTENSIONS);
   LOGS_DEFAULT(VERBOSE) << "[CL] device extensions: " << exts << std::endl;
-  bool has_fp16 = exts.find("cl_khr_fp16") != std::string::npos;
-  if (!has_fp16 && UseFp16()) {
+  dev_info_.has_fp16 = exts.find("cl_khr_fp16") != std::string::npos;
+  if (!dev_info_.has_fp16 && UseFp16()) {
     LOGS_DEFAULT(WARNING) << "[CL] FP16 is requested, but is not supported by the device!";
     DisableFp16();
   }
-  flush_after_launch_ = opencl::ShouldFlushAfterLaunch(device_name);
+  flush_after_launch_ = opencl::ShouldFlushAfterLaunch(dev_info_.device_name);
   LOGS_DEFAULT(INFO) << "[CL] FP16: " << UseFp16();
   LOGS_DEFAULT(INFO) << "[CL] clFlush after launch: " << flush_after_launch_;
+
+  clGetDeviceInfo(dev_, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, sizeof(dev_info_.global_memery_cachesize_), &dev_info_.global_memery_cachesize_, nullptr);
+  clGetDeviceInfo(dev_, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(dev_info_.compute_units_), &dev_info_.compute_units_, nullptr);
+  clGetDeviceInfo(dev_, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(dev_info_.max_freq_), &dev_info_.max_freq_, nullptr);
+  clGetDeviceInfo(dev_, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(dev_info_.local_memory_size_), &dev_info_.local_memory_size_, nullptr);
+  clGetDeviceInfo(dev_, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(dev_info_.max_work_group_size), &dev_info_.max_work_group_size, nullptr);
+  clGetDeviceInfo(dev_, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(dev_info_.max_work_item_size), &dev_info_.max_work_item_size, nullptr);
+
+  size_t max_height, max_width;
+  clGetDeviceInfo(dev_, CL_DEVICE_IMAGE2D_MAX_WIDTH, sizeof(size_t), &max_width, nullptr);
+  clGetDeviceInfo(dev_, CL_DEVICE_IMAGE2D_MAX_HEIGHT, sizeof(size_t), &max_height, nullptr);
+  dev_info_.image_2d_max_size[0] = (max_width);
+  dev_info_.image_2d_max_size[1] = (max_height);
 
 #ifdef TRACY_ENABLE
   cmd_queue_ = clCreateCommandQueue(ctx_, dev_, CL_QUEUE_PROFILING_ENABLE, &err);
@@ -208,7 +221,7 @@ void OpenCLExecutionProvider::RegisterAllocator(std::shared_ptr<AllocatorManager
 
   InsertAllocator(CreateAllocator(AllocatorCreationInfo{
       [this](int) {
-        return std::make_unique<opencl::OpenCLImage2DAllocator>(ctx_, UseFp16());
+        return std::make_unique<opencl::OpenCLImage2DAllocator>(ctx_, UseFp16(), dev_info_.image_2d_max_size);
       },
       0,
       /*use_arena=*/false,

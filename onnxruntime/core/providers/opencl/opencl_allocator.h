@@ -44,7 +44,7 @@ class OpenCLImage2DAllocator : public IAllocator {
   };
 
  public:
-  explicit OpenCLImage2DAllocator(cl_context ctx, bool use_fp16);
+  explicit OpenCLImage2DAllocator(cl_context ctx, bool use_fp16, size_t* device_image_hw_limit=0);
   ~OpenCLImage2DAllocator() override;
 
   void* Alloc(size_t size) override;
@@ -55,6 +55,7 @@ class OpenCLImage2DAllocator : public IAllocator {
  private:
   cl_context ctx_;
   bool use_fp16_;
+  int64_t image_max_wh[2];
 
   // FIXME: better caching, cache for kernel benchmark at the moment
   std::unordered_map<void*, Metadata> meta_;

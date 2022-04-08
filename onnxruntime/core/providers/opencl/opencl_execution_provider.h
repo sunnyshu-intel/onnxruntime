@@ -40,6 +40,19 @@ struct OpenCLExecutionProviderInfo {
   bool use_fp16;
 };
 
+struct OpenCLDeviceInfo {
+  // get cache size, compute units and frequency. used to tune kernel performance
+  std::string device_name;
+  bool has_fp16=false;
+  uint64_t global_memery_cachesize_ = 0;
+  uint32_t compute_units_ = 0;
+  uint32_t max_freq_ = 0;
+  uint64_t local_memory_size_ = 0;
+  size_t max_work_group_size = 0;
+  size_t max_work_item_size[3] = {0};
+  size_t image_2d_max_size[2] = {0};
+};
+
 using IAllocatorUniquePtrToClMem = IAllocatorUniquePtr<std::remove_pointer_t<cl_mem>>;
 
 // Logical device representation.
@@ -88,6 +101,7 @@ class OpenCLExecutionProvider : public IExecutionProvider {
   cl_command_queue cmd_queue_;
   bool use_fp16_;
   bool flush_after_launch_;
+  OpenCLDeviceInfo dev_info_;
 
  private:
   std::unique_ptr<opencl::OpenCLProgramManager> program_manager_;

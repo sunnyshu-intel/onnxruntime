@@ -60,11 +60,17 @@ void OpenCLBufferAllocator::Free(void* p) {
   it->second.push_front(p);
 }
 
-OpenCLImage2DAllocator::OpenCLImage2DAllocator(cl_context ctx, bool use_fp16)
+OpenCLImage2DAllocator::OpenCLImage2DAllocator(cl_context ctx, bool use_fp16, size_t* device_image_hw_limit)
     : IAllocator(OrtMemoryInfo(Image2DAllocatorName, OrtAllocatorType::OrtDeviceAllocator,
                                OrtDevice(OrtDevice::GPU, CLMemType::OPENCL_IMAGE_2D, /*device_id_=*/0))),
       ctx_(ctx),
       use_fp16_{use_fp16} {
+  if (device_image_hw_limit) {
+    image_max_wh[0] = device_image_hw_limit[0];//width
+    image_max_wh[1] = device_image_hw_limit[1];  // height
+  } else {
+    std::fill(image_max_wh, image_max_wh + 2, 10384);
+  }
 }
 
 OpenCLImage2DAllocator::~OpenCLImage2DAllocator() {
@@ -89,8 +95,8 @@ void* OpenCLImage2DAllocator::Alloc(const Image2DDesc& desc) {
   if (it == cache_.end() || it->second.empty()) {
     cl_int err{};
     // FIXME: range limit is for NVIDIA GPU, adjust it for target gpu!
-    ORT_ENFORCE(desc.Height() > 0 && desc.Height() <= 65535, "Image2D height invalid");
-    ORT_ENFORCE(desc.Width() > 0 && desc.Width() <= 65535, "Image2D width invalid");
+    ORT_ENFORCE(desc.Height() > 0 && desc.Height() <= image_max_wh[1], "Image2D height invalid");
+    ORT_ENFORCE(desc.Width() > 0 && desc.Width() <= image_max_wh[0], "Image2D width invalid");
     cl_image_format image_format;
     image_format.image_channel_data_type = use_fp16_ ? CL_HALF_FLOAT : CL_FLOAT;
     image_format.image_channel_order = CL_RGBA;
