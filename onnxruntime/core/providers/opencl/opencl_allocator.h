@@ -44,7 +44,7 @@ class OpenCLImage2DAllocator : public IAllocator {
   };
 
  public:
-  explicit OpenCLImage2DAllocator(cl_context ctx, bool use_fp16, size_t* device_image_hw_limit=0);
+  explicit OpenCLImage2DAllocator(cl_context ctx, bool use_fp16, size_t* device_image_hw_limit);
   ~OpenCLImage2DAllocator() override;
 
   void* Alloc(size_t size) override;
