@@ -114,6 +114,13 @@ std::shared_ptr<KernelRegistry> OpenCLExecutionProvider::GetKernelRegistry() con
   static std::shared_ptr<KernelRegistry> kernel_registry = opencl::GetOpenCLKernelRegistry();
   return kernel_registry;
 }
+template <class T>
+static void GetCLDevInfo(cl_device_id  device ,
+                  cl_device_info param_name, T* param) {
+  static_assert(std::is_same<T, size_t>::value || std::is_same<T, uint64_t>::value 
+      || std::is_same<T, uint32_t>::value || std::is_same<T, size_t[3]>::value);
+  ORT_THROW_IF_CL_ERROR(clGetDeviceInfo(device, param_name, sizeof(T), param, nullptr));
+}
 
 Status OpenCLExecutionProvider::InitOpenCLContext() {
   cl_uint num_platforms;
@@ -180,18 +187,15 @@ Status OpenCLExecutionProvider::InitOpenCLContext() {
   LOGS_DEFAULT(INFO) << "[CL] FP16: " << UseFp16();
   LOGS_DEFAULT(INFO) << "[CL] clFlush after launch: " << flush_after_launch_;
 
-  clGetDeviceInfo(dev_, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, sizeof(dev_info_.global_memery_cachesize_), &dev_info_.global_memery_cachesize_, nullptr);
-  clGetDeviceInfo(dev_, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(dev_info_.compute_units_), &dev_info_.compute_units_, nullptr);
-  clGetDeviceInfo(dev_, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(dev_info_.max_freq_), &dev_info_.max_freq_, nullptr);
-  clGetDeviceInfo(dev_, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(dev_info_.local_memory_size_), &dev_info_.local_memory_size_, nullptr);
-  clGetDeviceInfo(dev_, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(dev_info_.max_work_group_size), &dev_info_.max_work_group_size, nullptr);
-  clGetDeviceInfo(dev_, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(dev_info_.max_work_item_size), &dev_info_.max_work_item_size, nullptr);
+  GetCLDevInfo(dev_, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, &dev_info_.global_memery_cachesize_);
+  GetCLDevInfo(dev_, CL_DEVICE_MAX_COMPUTE_UNITS, &dev_info_.compute_units_);
+  GetCLDevInfo(dev_, CL_DEVICE_MAX_CLOCK_FREQUENCY, &dev_info_.max_freq_);
+  GetCLDevInfo(dev_, CL_DEVICE_LOCAL_MEM_SIZE, &dev_info_.local_memory_size_);
+  GetCLDevInfo(dev_, CL_DEVICE_MAX_WORK_GROUP_SIZE, &dev_info_.max_work_group_size);
+  GetCLDevInfo(dev_, CL_DEVICE_MAX_WORK_ITEM_SIZES, &dev_info_.max_work_item_size);
+  GetCLDevInfo(dev_, CL_DEVICE_IMAGE2D_MAX_WIDTH, &dev_info_.image_2d_max_size[0]);
+  GetCLDevInfo(dev_, CL_DEVICE_IMAGE2D_MAX_HEIGHT, &dev_info_.image_2d_max_size[1]);
 
-  size_t max_height, max_width;
-  clGetDeviceInfo(dev_, CL_DEVICE_IMAGE2D_MAX_WIDTH, sizeof(size_t), &max_width, nullptr);
-  clGetDeviceInfo(dev_, CL_DEVICE_IMAGE2D_MAX_HEIGHT, sizeof(size_t), &max_height, nullptr);
-  dev_info_.image_2d_max_size[0] = (max_width);
-  dev_info_.image_2d_max_size[1] = (max_height);
 
 #ifdef TRACY_ENABLE
   cmd_queue_ = clCreateCommandQueue(ctx_, dev_, CL_QUEUE_PROFILING_ENABLE, &err);
