@@ -509,8 +509,8 @@ void OpTester::AddNodes(
   // default behavior is to create a single Node for the op being tested, with
   // node inputs/outputs
   // being 1:1 with graph inputs/outputs.
-  auto& node = graph.AddNode("node1", op_, op_, graph_input_defs,
-                             graph_output_defs, nullptr, domain_);
+  auto& node = graph.AddNode("node1", std::string(op_), std::string(op_), graph_input_defs,
+                             graph_output_defs, nullptr, std::string(domain_));
 
   // Add the attributes if any
   for (auto& add_attribute_fn : add_attribute_funcs)
@@ -724,27 +724,51 @@ std::unique_ptr<onnxruntime::Model> OpTester::BuildGraph(
 
   // Create a simple model
   std::unordered_map<std::string, int> domain_to_version(extra_domain_to_version);
-  if (domain_to_version.count(domain_) == 0) {
-    domain_to_version.insert({domain_, opset_version_});
+  if (domain_to_version.count(std::string(domain_)) == 0) {
+    domain_to_version.insert({std::string(domain_), opset_version_});
   } else {
-    auto key_val = extra_domain_to_version.find(domain_);
+    std::string domain_str = std::string(domain_);
+    auto key_val = extra_domain_to_version.find(domain_str);
 
     ORT_ENFORCE(key_val->second <= opset_version_);
 
     if (key_val->second < opset_version_) {
-      domain_to_version[domain_] = opset_version_;
+      domain_to_version[domain_str] = opset_version_;
     }
   }
-
+  auto iter = domain_to_version.find(kOnnxDomain);
+  if (iter == domain_to_version.end())
+    iter = domain_to_version.find(kOnnxDomainAlias);
+  if (iter != domain_to_version.end()) {
+    if (domain_to_version.find(kMSInternalNHWCDomain) == domain_to_version.end())
+      domain_to_version[kMSInternalNHWCDomain] = iter->second;
+  }
+#ifdef USE_XNNPACK
+  else {
+    int latest_onnx_version =
+        ONNX_NAMESPACE::OpSchemaRegistry::DomainToVersionRange().Map().at(ONNX_NAMESPACE::ONNX_DOMAIN).second;
+    iter = domain_to_version.find(kMSInternalNHWCDomain);
+    if (iter == domain_to_version.end()) {
+      domain_to_version[kMSInternalNHWCDomain] = latest_onnx_version;
+      domain_to_version[kOnnxDomain] = latest_onnx_version;
+    } else {
+      domain_to_version[kOnnxDomain] = iter->second;
+    }
+  }
+  // These ops are auto-inserted by optimizer
+  domain_to_version["com.microsoft.xnnpack"] = 1;
+  domain_to_version[kMSDomain] = 1;
+#endif
   auto p_model = std::make_unique<onnxruntime::Model>(
       "test", false, ModelMetaData(), PathString(), custom_schema_registries_,
       domain_to_version, std::vector<ONNX_NAMESPACE::FunctionProto>{},
-      DefaultLoggingManager().DefaultLogger(), allow_released_onnx_opset_only);
+      *logger_, allow_released_onnx_opset_only);
   onnxruntime::Graph& graph = p_model->MainGraph();
   AddNodes(graph, node_input_defs, output_defs, add_attribute_funcs_);
 
   // Add Initializer
   AddInitializers(graph);
+
   return p_model;
 }
 
@@ -758,14 +782,14 @@ std::vector<OrtValue> OpTester::ExecuteModel(
   std::string s1;
   const bool rc = model.ToProto().SerializeToString(&s1);
   if (!rc) {
-    LOGS_DEFAULT(ERROR) << "Failed to serialize proto to string";
+    LOGS(*logger_, ERROR) << "Failed to serialize proto to string";
     return {};
   }
   std::stringstream sstr(s1);
   auto status = session_object.Load(sstr, allow_released_onnx_opset_only);
   EXPECT_TRUE(status.IsOK()) << status.ErrorMessage();
   if (!status.IsOK()) {
-    LOGS_DEFAULT(ERROR) << "Load failed with status: " << status.ErrorMessage();
+    LOGS(*logger_, ERROR) << "Load failed with status: " << status.ErrorMessage();
     return {};
   }
 
@@ -780,8 +804,8 @@ std::vector<OrtValue> OpTester::ExecuteModel(
                     testing::HasSubstr(expected_failure_string));
       }
     } else {
-      LOGS_DEFAULT(ERROR) << "Initialize failed with status: "
-                          << status.ErrorMessage();
+      LOGS(*logger_, ERROR) << "Initialize failed with status: "
+                            << status.ErrorMessage();
       EXPECT_TRUE(status.IsOK()) << status.ErrorMessage();
     }
   }
@@ -816,8 +840,8 @@ std::vector<OrtValue> OpTester::ExecuteModel(
                       testing::HasSubstr(expected_failure_string));
         }
       } else {
-        LOGS_DEFAULT(ERROR) << "Run failed with status: "
-                            << status.ErrorMessage();
+        LOGS(*logger_, ERROR) << "Run failed with status: "
+                              << status.ErrorMessage();
         EXPECT_TRUE(status.IsOK()) << status.ErrorMessage();
       }
       return {};
@@ -940,7 +964,7 @@ void OpTester::Run(
     if (allow_released_onnx_opset_only) {
       auto& onnx_released_versions =
           ONNX_NAMESPACE::OpSchemaRegistry::DomainToVersionRange::Instance().LastReleaseVersionMap();
-      auto it = onnx_released_versions.find(domain_);
+      auto it = onnx_released_versions.find(std::string(domain_));
       if (it != onnx_released_versions.end() && opset_version_ > it->second) {
         LOGS_DEFAULT(WARNING) << "Encountered model with opset version greater than released onnx opset version. "
                               << "Skipping this test. To run this test set environment variable ALLOW_RELEASED_ONNX_OPSET_ONLY to \"0\". "
@@ -978,8 +1002,8 @@ void OpTester::Run(
           EXPECT_THAT(status.ErrorMessage(),
                       testing::HasSubstr(expected_failure_string));
         } else {
-          LOGS_DEFAULT(ERROR) << "Resolve failed with status: "
-                              << status.ErrorMessage();
+          LOGS(*logger_, ERROR) << "Resolve failed with status: "
+                                << status.ErrorMessage();
           EXPECT_TRUE(status.IsOK()) << status.ErrorMessage();
         }
       }
@@ -1028,7 +1052,6 @@ void OpTester::Run(
       }
 
       InferenceSession session_object{so, GetEnvironment()};
-
       if (add_prepacked_shared_container_to_sessions_) {
         ASSERT_STATUS_OK(session_object.AddPrePackedWeightsContainer(&prepacked_weights_container_));
       }

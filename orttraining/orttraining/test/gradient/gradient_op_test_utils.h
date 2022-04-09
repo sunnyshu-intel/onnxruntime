@@ -13,11 +13,11 @@ using TestDataVector = std::tuple<std::vector<std::vector<TensorInfo>>, // Input
 
 class GradientOpTester : public OpTester {
  public:
-  explicit GradientOpTester(const char* op,
+  explicit GradientOpTester(std::string_view op,
                             const std::vector<TensorInfo>& input_infos,
                             const std::vector<TensorInfo>& output_infos,
                             int opset_version = 9,
-                            const char* domain = onnxruntime::kOnnxDomain,
+                            std::string_view domain = onnxruntime::kOnnxDomain,
                             bool verify_output = true)
       : OpTester(op, opset_version, domain, verify_output),
         input_infos_(input_infos),

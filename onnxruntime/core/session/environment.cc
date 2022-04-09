@@ -2,6 +2,11 @@
 // Licensed under the MIT License.
 
 #include "core/session/environment.h"
+
+#ifdef USE_XNNPACK
+#include <xnnpack.h>
+#endif
+
 #include "core/session/allocator_adapters.h"
 #include "core/framework/allocatormgr.h"
 #include "core/graph/constants.h"
@@ -19,6 +24,9 @@
 #endif
 #ifndef DISABLE_CONTRIB_OPS
 #include "core/graph/contrib_ops/contrib_defs.h"
+#ifdef USE_XNNPACK
+#include "core/xnnpack/schema/xnnpack_opset.h"
+#endif
 #endif
 #ifdef USE_DML
 #include "core/graph/dml_ops/dml_defs.h"
@@ -61,6 +69,9 @@ Status Environment::Create(std::unique_ptr<logging::LoggingManager> logging_mana
                            std::unique_ptr<Environment>& environment,
                            const OrtThreadingOptions* tp_options,
                            bool create_global_thread_pools) {
+#ifdef USE_XNNPACK
+  xnn_initialize(nullptr);
+#endif
   environment = std::make_unique<Environment>();
   auto status = environment->Initialize(std::move(logging_manager), tp_options, create_global_thread_pools);
   return status;
@@ -228,10 +239,24 @@ Status Environment::Initialize(std::unique_ptr<logging::LoggingManager> logging_
         // External shared providers may have already added kMSDomain
         domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSDomain, 1, 1);
       }
+      auto iter = domainToVersionRangeInstance.Map().find(onnxruntime::kOnnxDomain);
+      if (iter != domainToVersionRangeInstance.Map().end()) {
+        domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSInternalNHWCDomain, 1, iter->second.second);
+      } else {
+        // Usually it shouldn't reach here.
+        domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSInternalNHWCDomain, 1, 1);
+      }
+
+      if (domainToVersionRangeInstance.Map().find(onnxruntime::kMSDomain) == domainToVersionRangeInstance.Map().end()) {
+        // External shared providers may have already added kMSDomain
+        domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSDomain, 1, 1);
+      }
       domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSExperimentalDomain, 1, 1);
       domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSNchwcDomain, 1, 1);
-      domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSInternalNHWCDomain, 1, 1);
       domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kPytorchAtenDomain, 1, 1);
+#ifdef USE_XNNPACK
+      domainToVersionRangeInstance.AddDomainToVersion("com.microsoft.xnnpack", 1, 1);
+#endif
 #ifdef USE_DML
       domainToVersionRangeInstance.AddDomainToVersion(onnxruntime::kMSDmlDomain, 1, 1);
 #endif
@@ -241,6 +266,9 @@ Status Environment::Initialize(std::unique_ptr<logging::LoggingManager> logging_
 #ifndef ORT_MINIMAL_BUILD
       RegisterOpSetSchema<contrib::OpSet_Microsoft_ver1>();
       RegisterOpSetSchema<contrib::OpSet_ONNX_Deprecated>();
+#ifdef USE_XNNPACK
+      ::ONNX_NAMESPACE::RegisterOpSetSchema<xnnpack::OpSet_XnnPack_ver1>();
+#endif
 #endif
       contrib::RegisterContribSchemas();
 #endif

@@ -266,8 +266,8 @@ class OpTester {
   //        will find and run the CPU v2 implementation, but will not match the GPU v1 implementation.
   //        OpTester will say it was successful as at least one EP ran, and the GPU implementation of v1 no longer has
   //        test coverage.
-  explicit OpTester(const char* op, int opset_version = 7, const char* domain = onnxruntime::kOnnxDomain, bool verify_output = true)
-      : op_(op), domain_(domain), opset_version_(opset_version), verify_output_(verify_output) {
+  explicit OpTester(std::string_view op, int opset_version = 7, std::string_view domain = onnxruntime::kOnnxDomain, bool verify_output = true)
+      : logger_(DefaultLoggingManager().CreateLogger("OpTest")), op_(op), domain_(domain), opset_version_(opset_version), verify_output_(verify_output) {
     if (opset_version_ < 0) {
       static int latest_onnx_version =
           ONNX_NAMESPACE::OpSchemaRegistry::DomainToVersionRange().Map().at(ONNX_NAMESPACE::ONNX_DOMAIN).second;
@@ -819,6 +819,7 @@ class OpTester {
   std::vector<OrtValue>
   GetFetches() { return fetches_; }
 
+  // The returned object depends on this->logger_
   std::unique_ptr<onnxruntime::Model> BuildGraph(const std::unordered_map<std::string, int>& extra_domain_to_version = {},
                                                  bool allow_released_onnx_opset_only = true);
 
@@ -905,8 +906,8 @@ class OpTester {
                                      const std::vector<std::string>& output_names,
                                      const std::string& provider_type,
                                      bool allow_released_onnx_opset_only = true);
-
-  const char* op_;
+  std::unique_ptr<logging::Logger> logger_;
+  std::string_view op_;
   std::vector<Data> input_data_;
   std::vector<Data> output_data_;
   std::vector<OrtValue> fetches_;
@@ -1127,7 +1128,7 @@ class OpTester {
                            const CheckParams& check_params);
 #endif
 
-  const char* domain_;
+  std::string_view domain_;
   int opset_version_;
   bool add_shape_to_tensor_data_ = true;
   int add_symbolic_dim_to_tensor_data_ = -1;

@@ -12,10 +12,9 @@ typedef std::vector<std::vector<float>> TwoDArray;
 
 class OpFunctionTester : public OpTester {
  public:
-  OpFunctionTester(const char* op, int opset_version = 9, const char* domain = onnxruntime::kOnnxDomain)
+  OpFunctionTester(std::string_view op, int opset_version = 9, std::string_view domain = onnxruntime::kOnnxDomain)
       : OpTester(op, opset_version, domain) {}
   TwoDArray RunFunctionBodyGraphOnCPU();
-  virtual ~OpFunctionTester();
 };
 
 template <class T>
