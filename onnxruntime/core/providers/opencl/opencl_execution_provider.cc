@@ -242,7 +242,7 @@ Status OpenCLExecutionProvider::InitOpenCLContext() {
 }
 
 // adreno local size calculate //reference to TNN
-static std::vector<size_t> AdrenoLocalSize2D(const std::vector<size_t>& gws, const opencl::OpenCLDeviceInfo& gpu_info) {
+static std::vector<size_t> AdrenoLocalSize2D(const opencl::NDRange& gws, const opencl::OpenCLDeviceInfo& gpu_info) {
   std::vector<size_t> lws;
   const size_t max_workgroup_size = gpu_info.max_work_group_size;
   const size_t subgroup_size = gpu_info.sub_group_size;
@@ -255,7 +255,7 @@ static std::vector<size_t> AdrenoLocalSize2D(const std::vector<size_t>& gws, con
   if (gws[1] % min_workgroup_count == 0) {
     lws.resize(2);
     lws[1] = std::min<size_t>(gws[1] / min_workgroup_count, max_workgroup_size);
-    auto AdrenoLocalSizeValid = [](const std::vector<size_t>& gws, std::vector<size_t>& lws,
+    auto AdrenoLocalSizeValid = [](const opencl::NDRange& gws, std::vector<size_t>& lws,
                                    const size_t subgroup_size)->bool {
       return 0 == (lws[0] * lws[1]) % subgroup_size && 0 == gws[0] % lws[0] && 0 == gws[1] % lws[1] &&
              ((lws[0] < lws[1]) == (gws[0] < gws[1]));
@@ -311,7 +311,7 @@ static std::vector<size_t> AdrenoLocalSize2D(const std::vector<size_t>& gws, con
   return lws;
 }
 
-std::vector<size_t> OpenCLExecutionProvider::DefaultLocalWG2DWithoutTune(const std::vector<size_t>& gws) const {
+opencl::NDRange OpenCLExecutionProvider::DefaultLocalWG2DWithoutTune(const opencl::NDRange& gws) const {
   if (dev_info_.gpu_type != opencl::GpuType::ADRENO) {
     return {};
   }
@@ -321,7 +321,10 @@ std::vector<size_t> OpenCLExecutionProvider::DefaultLocalWG2DWithoutTune(const s
   } else {
     lwgs = AdrenoLocalSize2D(gws, dev_info_);
   }
-  return lwgs;
+  if (lwgs.size() == 0) {
+    return {};
+  }
+  return {lwgs[0], lwgs[1]};
 }
 
 void OpenCLExecutionProvider::RegisterAllocator(std::shared_ptr<AllocatorManager> /*allocator_manager*/) {

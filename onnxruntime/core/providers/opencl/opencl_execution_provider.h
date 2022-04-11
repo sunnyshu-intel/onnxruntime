@@ -97,7 +97,7 @@ class OpenCLExecutionProvider : public IExecutionProvider {
   const opencl::OpenCLProgramManager& GetProgramManager() const;
   opencl::OpenCLProgramManager& GetProgramManager();
 
-  std::vector<size_t> DefaultLocalWG2DWithoutTune(const std::vector<size_t>& gws) const;
+  opencl::NDRange DefaultLocalWG2DWithoutTune(const opencl::NDRange& gws) const;
 
  private:
   Status InitOpenCLContext();

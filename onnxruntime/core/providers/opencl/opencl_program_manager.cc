@@ -165,6 +165,18 @@ void OpenCLProgramManager::ReleaseKernel(cl_kernel kernel) {
   }
 }
 
+void OpenCLProgramManager::SetLocalSizeUsingGlobal(const NDRange &global, NDRange local) {
+  global_map_to_local_size[global] = local;
+}
+
+std::optional<const NDRange> OpenCLProgramManager::GetLocalSizeUsingGlobal(const NDRange& global) {
+  if (!global_map_to_local_size.count(global)) {
+    return std::nullopt;
+  }
+  return global_map_to_local_size[global];
+}
+
+
 void OpenCLProgramManager::TakeinProgram(ProgramKey key, cl_program program) {
   program_registry_[key] = program;
   ProgramMeta meta{};
