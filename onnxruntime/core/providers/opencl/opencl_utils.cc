@@ -146,19 +146,32 @@ Status KernelLauncher::Launch(const OpenCLExecutionProvider& exec, const NDRange
   VLOGS_DEFAULT(V_KERNEL) << "Launching " << GetKernelFunctionName()
                           << " with global work size: " << global.ToString()
                           << " local work size: " << local.ToString();
-
+  std::vector<size_t> local_;
+  if (local.Size() == 0) {
+    if (global.Size() == 2) {
+      std::vector<size_t> gwg = {(global.Data()[0]), (global.Data()[1])};
+      local_ = exec.DefaultLocalWG2DWithoutTune(gwg);
+    } else {
+        //TODO 3D kernel
+    }
+  } else {
+    local_.resize(local.Size());
+    for (size_t i = 0; i < local.Size(); ++i) {
+      local_[i] = local.Data()[i];
+    }
+  }
 #ifdef TRACY_ENABLE
   cl_event kernel_launch_event;
   {
     ZoneScopedN("clEnqueueNDRangeKernel");
     TracyCLZone(const_cast<TracyCLCtx>(exec.GetTracyCLContext()), "clEnqueueNDRangeKernel");
     ORT_RETURN_IF_CL_ERROR(clEnqueueNDRangeKernel(exec.GetCommandQueue(), kernel_, global.Size(), nullptr,
-                                                  global.Data(), local.Data(), 0, nullptr, &kernel_launch_event));
+                                                  global.Data(), local_.data(), 0, nullptr, &kernel_launch_event));
     TracyCLZoneSetEvent(kernel_launch_event);
   }
 #else
   ORT_RETURN_IF_CL_ERROR(clEnqueueNDRangeKernel(exec.GetCommandQueue(), kernel_, global.Size(), nullptr,
-                                                global.Data(), local.Data(), 0, nullptr, nullptr));
+                                                global.Data(), local_.data(), 0, nullptr, nullptr));
 #endif
   return exec.AfterCLLaunch();
 }

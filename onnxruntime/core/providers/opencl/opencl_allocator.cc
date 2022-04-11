@@ -60,13 +60,13 @@ void OpenCLBufferAllocator::Free(void* p) {
   it->second.push_front(p);
 }
 
-OpenCLImage2DAllocator::OpenCLImage2DAllocator(cl_context ctx, bool use_fp16, size_t* device_image_hw_limit)
+OpenCLImage2DAllocator::OpenCLImage2DAllocator(cl_context ctx, bool use_fp16, size_t* device_image_wh_limit)
     : IAllocator(OrtMemoryInfo(Image2DAllocatorName, OrtAllocatorType::OrtDeviceAllocator,
                                OrtDevice(OrtDevice::GPU, CLMemType::OPENCL_IMAGE_2D, /*device_id_=*/0))),
       ctx_(ctx),
       use_fp16_{use_fp16} {
-  image_max_wh[0] = device_image_hw_limit[0];  // width
-  image_max_wh[1] = device_image_hw_limit[1];  // height
+  image_max_wh[0] = device_image_wh_limit[0];  // width
+  image_max_wh[1] = device_image_wh_limit[1];  // height
 }
 
 OpenCLImage2DAllocator::~OpenCLImage2DAllocator() {

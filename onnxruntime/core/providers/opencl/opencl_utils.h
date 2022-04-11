@@ -120,6 +120,12 @@
 namespace onnxruntime {
 namespace opencl {
 
+enum class GpuType {
+  OTHER = 0,
+  ADRENO = 1,
+  MALI = 2,
+};
+
 class NDRange {
  public:
   // NOLINTNEXTLINE(readability-redundant-member-init), otherwise, segfault

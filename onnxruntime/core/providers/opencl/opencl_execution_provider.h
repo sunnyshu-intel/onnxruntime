@@ -39,11 +39,15 @@ namespace onnxruntime {
 struct OpenCLExecutionProviderInfo {
   bool use_fp16;
 };
-
+namespace opencl {
+enum class GpuType;
 struct OpenCLDeviceInfo {
   // get cache size, compute units and frequency. used to tune kernel performance
   std::string device_name;
-  bool has_fp16=false;
+  bool has_fp16 = false;
+  int32_t gpu_model = 0;
+  GpuType gpu_type;
+  uint32_t sub_group_size=0;
   uint64_t global_memery_cachesize_ = 0;
   uint32_t compute_units_ = 0;
   uint32_t max_freq_ = 0;
@@ -52,6 +56,7 @@ struct OpenCLDeviceInfo {
   size_t max_work_item_size[3] = {0};
   size_t image_2d_max_size[2] = {0};
 };
+}  // namespace opencl
 
 using IAllocatorUniquePtrToClMem = IAllocatorUniquePtr<std::remove_pointer_t<cl_mem>>;
 
@@ -92,6 +97,8 @@ class OpenCLExecutionProvider : public IExecutionProvider {
   const opencl::OpenCLProgramManager& GetProgramManager() const;
   opencl::OpenCLProgramManager& GetProgramManager();
 
+  std::vector<size_t> DefaultLocalWG2DWithoutTune(const std::vector<size_t>& gws) const;
+
  private:
   Status InitOpenCLContext();
   void DisableFp16() { use_fp16_ = false; }
@@ -101,7 +108,7 @@ class OpenCLExecutionProvider : public IExecutionProvider {
   cl_command_queue cmd_queue_;
   bool use_fp16_;
   bool flush_after_launch_;
-  OpenCLDeviceInfo dev_info_;
+  opencl::OpenCLDeviceInfo dev_info_;
 
  private:
   std::unique_ptr<opencl::OpenCLProgramManager> program_manager_;

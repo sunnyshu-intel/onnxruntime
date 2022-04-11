@@ -121,7 +121,23 @@ static void GetCLDevInfo(cl_device_id  device ,
       || std::is_same<T, uint32_t>::value || std::is_same<T, size_t[3]>::value);
   ORT_THROW_IF_CL_ERROR(clGetDeviceInfo(device, param_name, sizeof(T), param, nullptr));
 }
-
+// Gpu SubGroup, referenced to TNN, GPU-model->a exprienced magic number, as CL_KERNEL_MAX_SUB_GROUP_SIZE_FOR_NDRANGE is not implemented util opencl 2.1
+static std::map<int, int> AdrenoSubGroup{
+    {640, 128},
+    {630, 128},
+    {616, 128},
+    {612, 64},
+    {610, 64},
+    {540, 32},
+    {530, 32},
+    {512, 32},
+    {510, 32},
+    {509, 32},
+    {506, 32},
+    {505, 32},
+    {405, 32},
+    {330, 16},
+};
 Status OpenCLExecutionProvider::InitOpenCLContext() {
   cl_uint num_platforms;
   ORT_RETURN_IF_CL_ERROR(clGetPlatformIDs(0, nullptr, &num_platforms));
@@ -173,8 +189,9 @@ Status OpenCLExecutionProvider::InitOpenCLContext() {
   };
 
   dev_info_.device_name = GetDeviceInfo(dev_, CL_DEVICE_NAME);
+  auto device_version = GetDeviceInfo(dev_, CL_DEVICE_VERSION);
   LOGS_DEFAULT(INFO) << "[CL] device name: " << dev_info_.device_name;
-  LOGS_DEFAULT(VERBOSE) << "[CL] device vendor: " << GetDeviceInfo(dev_, CL_DEVICE_VENDOR);
+  LOGS_DEFAULT(VERBOSE) << "[CL] device vendor: " << device_version;
   LOGS_DEFAULT(VERBOSE) << "[CL] device version: " << GetDeviceInfo(dev_, CL_DEVICE_VERSION);
   auto exts = GetDeviceInfo(dev_, CL_DEVICE_EXTENSIONS);
   LOGS_DEFAULT(VERBOSE) << "[CL] device extensions: " << exts << std::endl;
@@ -186,16 +203,33 @@ Status OpenCLExecutionProvider::InitOpenCLContext() {
   flush_after_launch_ = opencl::ShouldFlushAfterLaunch(dev_info_.device_name);
   LOGS_DEFAULT(INFO) << "[CL] FP16: " << UseFp16();
   LOGS_DEFAULT(INFO) << "[CL] clFlush after launch: " << flush_after_launch_;
-
+  if (dev_info_.device_name == "QUALCOMM Adreno(TM)") {
+    dev_info_.gpu_type = opencl::GpuType::ADRENO;
+    //windows will report a warning os sscanf_s
+#if !(defined(WIN32) || defined(_WIN32) || defined(_WIN32_) || \
+    defined(WIN64) || defined(_WIN64) || defined(_WIN64_))
+    sscanf(device_version.c_str(), "%*s%*f%*s%d", &dev_info_.gpu_model);
+#endif
+#if CL_HPP_TARGET_OPENCL_VERSION >= 200 && CL_TARGET_OPENCL_VERSION >= 210 && defined(CL_HPP_USE_CL_SUB_GROUPS_KHR)
+    cl_int cl_ret;
+    sub_group_size = kernel.getSubGroupInfo<CL_KERNEL_MAX_SUB_GROUP_SIZE_FOR_NDRANGE>(*device_, range, &cl_ret);
+    if (cl_ret != CL_SUCCESS) {
+      CHECK_CL_SUCCESS(cl_ret)
+      sub_group_size = 0;
+    }
+#else
+    dev_info_.sub_group_size = AdrenoSubGroup.count(dev_info_.gpu_model) ?
+        AdrenoSubGroup[dev_info_.gpu_model] : 0;
+#endif
+  }
   GetCLDevInfo(dev_, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, &dev_info_.global_memery_cachesize_);
   GetCLDevInfo(dev_, CL_DEVICE_MAX_COMPUTE_UNITS, &dev_info_.compute_units_);
   GetCLDevInfo(dev_, CL_DEVICE_MAX_CLOCK_FREQUENCY, &dev_info_.max_freq_);
   GetCLDevInfo(dev_, CL_DEVICE_LOCAL_MEM_SIZE, &dev_info_.local_memory_size_);
   GetCLDevInfo(dev_, CL_DEVICE_MAX_WORK_GROUP_SIZE, &dev_info_.max_work_group_size);
-  GetCLDevInfo(dev_, CL_DEVICE_MAX_WORK_ITEM_SIZES, &dev_info_.max_work_item_size);
+  GetCLDevInfo(dev_, CL_DEVICE_MAX_WORK_ITEM_SIZES, &(dev_info_.max_work_item_size));
   GetCLDevInfo(dev_, CL_DEVICE_IMAGE2D_MAX_WIDTH, &dev_info_.image_2d_max_size[0]);
   GetCLDevInfo(dev_, CL_DEVICE_IMAGE2D_MAX_HEIGHT, &dev_info_.image_2d_max_size[1]);
-
 
 #ifdef TRACY_ENABLE
   cmd_queue_ = clCreateCommandQueue(ctx_, dev_, CL_QUEUE_PROFILING_ENABLE, &err);
@@ -205,6 +239,89 @@ Status OpenCLExecutionProvider::InitOpenCLContext() {
   ORT_RETURN_IF_CL_ERROR(err);
 
   return Status::OK();
+}
+
+// adreno local size calculate //reference to TNN
+static std::vector<size_t> AdrenoLocalSize2D(const std::vector<size_t>& gws, const opencl::OpenCLDeviceInfo& gpu_info) {
+  std::vector<size_t> lws;
+  const size_t max_workgroup_size = gpu_info.max_work_group_size;
+  const size_t subgroup_size = gpu_info.sub_group_size;
+  size_t min_workgroup_count = gpu_info.compute_units_;
+  // for the later verion gpu 1 SP can process more than one workgroup
+  if (gpu_info.gpu_model >= 540)
+    min_workgroup_count = 2 * gpu_info.compute_units_;
+
+  // judge gws[1] fisrt
+  if (gws[1] % min_workgroup_count == 0) {
+    lws.resize(2);
+    lws[1] = std::min<size_t>(gws[1] / min_workgroup_count, max_workgroup_size);
+    auto AdrenoLocalSizeValid = [](const std::vector<size_t>& gws, std::vector<size_t>& lws,
+                                   const size_t subgroup_size)->bool {
+      return 0 == (lws[0] * lws[1]) % subgroup_size && 0 == gws[0] % lws[0] && 0 == gws[1] % lws[1] &&
+             ((lws[0] < lws[1]) == (gws[0] < gws[1]));
+    };
+    // if subgroup size is got, then use it
+    if (0 != subgroup_size) {
+      size_t min_workgroup_size = subgroup_size * 2;
+      size_t max_val = std::max<size_t>(max_workgroup_size / lws[1], 1);
+      size_t min_val = std::max<size_t>(min_workgroup_size / lws[1], 1);
+      lws[0] = std::min<size_t>(gws[0], max_val);
+      for (; lws[0] >= min_val; lws[0]--) {
+        if (AdrenoLocalSizeValid(gws, lws, subgroup_size)) {
+          return lws;
+        }
+      }
+    }
+
+    // another way to calculate lws[0]
+    lws[0] = max_workgroup_size / lws[1];
+    lws[0] = std::max<size_t>(std::min<size_t>(gws[0], lws[0]), 1);
+    if (0 == gws[0] % lws[0] && 0 == gws[1] % lws[1] && ((lws[0] < lws[1]) == (gws[0] < gws[1]))) {
+      return lws;
+    }
+  }
+
+  // judge gws[0] later
+  if (gws[0] % min_workgroup_count == 0) {
+    lws.resize(2);
+    lws[0] = std::min<size_t>(gws[0] / min_workgroup_count, max_workgroup_size);
+
+    // if subgroup size is got, then use it
+    if (0 != subgroup_size) {
+      size_t min_workgroup_size = subgroup_size * 2;
+      size_t max_val = std::max<size_t>(max_workgroup_size / lws[0], 1);
+      size_t min_val = std::max<size_t>(min_workgroup_size / lws[0], 1);
+      lws[1] = std::min<size_t>(gws[1], max_val);
+      for (; lws[1] >= min_val; lws[1]--) {
+        if (0 == (lws[0] * lws[1]) % subgroup_size && 0 == gws[0] % lws[0] && 0 == gws[1] % lws[1] &&
+            ((lws[0] < lws[1]) == (gws[0] < gws[1]))) {
+          return lws;
+        }
+      }
+    }
+
+    // another way to calculate lws[1]
+    lws[1] = max_workgroup_size / lws[0];
+    lws[1] = std::max<size_t>(std::min<size_t>(gws[1], lws[1]), 1);
+    if (0 == gws[0] % lws[0] && 0 == gws[1] % lws[1] && ((lws[0] < lws[1]) == (gws[0] < gws[1]))) {
+      return lws;
+    }
+  }
+  lws.clear();
+  return lws;
+}
+
+std::vector<size_t> OpenCLExecutionProvider::DefaultLocalWG2DWithoutTune(const std::vector<size_t>& gws) const {
+  if (dev_info_.gpu_type != opencl::GpuType::ADRENO) {
+    return {};
+  }
+  std::vector<size_t> lwgs(2);
+  if (dev_info_.max_work_group_size == 0) {
+    lwgs[0] = lwgs[1] = 1;
+  } else {
+    lwgs = AdrenoLocalSize2D(gws, dev_info_);
+  }
+  return lwgs;
 }
 
 void OpenCLExecutionProvider::RegisterAllocator(std::shared_ptr<AllocatorManager> /*allocator_manager*/) {
