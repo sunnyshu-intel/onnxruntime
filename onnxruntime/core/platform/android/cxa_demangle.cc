@@ -13,7 +13,7 @@ extern "C" {
 /**
  * An dummy implementation of __cxa_demangle https://itanium-cxx-abi.github.io/cxx-abi/abi.html#demangler It is
  * referred in https://github.com/llvm/llvm-project/blob/d09d297c5d/libcxxabi/src/cxa_default_handlers.cpp#L53 However
- * it contribute a large percentage of binary size in minial build. To avoid it, the LLVM user can compile libc++abi.a
+ * it contribute a large percentage of binary size in minimal build. To avoid it, the LLVM user can compile libc++abi.a
  * with LIBCXXABI_NON_DEMANGLING_TERMINATE defined, see https://reviews.llvm.org/D88189 But this make the compilation
  * process extremely complex. Here we provide a dummy __cxa_demangle. It always copy the mangled name to output buffer.
  */
