@@ -46,6 +46,13 @@ parameters:
   type: string
   default: ''
 
+variables:
+  - name: finalStorage
+    $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]:
+      value: '--final_storage'
+    $[nq(variables['Build.SourceBranch'], 'refs/heads/main')]:
+      value: ''
+
 stages:
 - stage: Python_Packaging
 
@@ -215,7 +222,7 @@ stages:
             files=($(Build.ArtifactStagingDirectory)/Release/dist/*.whl) && \
             echo ${files[0]} && \
             python3 tools/ci_build/upload_python_package_to_azure_storage.py \
-                --python_wheel_path ${files[0]}
+                --python_wheel_path ${files[0]} $[variables['finalStorage']]
 
       - template: component-governance-component-detection-steps.yml
         parameters:
