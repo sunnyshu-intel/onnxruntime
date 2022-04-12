@@ -68,7 +68,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Upload python whl to azure storage.")
 
     parser.add_argument("--python_wheel_path", type=str, help="path to python wheel")
-    parser.add_argument("--final_storage", type=bool, action='store_true', help="upload to final storage")
+    parser.add_argument("--final_storage", action='store_true', help="upload to final storage")
 
     args = parser.parse_args()
 
