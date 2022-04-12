@@ -1,7 +1,12 @@
 trigger: none
 
 variables:
-  isMaster: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
+  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
+  - name: finalStorage
+    $[ if variables['isMain'] ]:
+      value: '--final_storage'
+    $[ else ]:
+      value: ''
 
 stages:
 - stage: Python_Packaging
