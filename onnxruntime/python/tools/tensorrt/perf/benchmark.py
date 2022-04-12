@@ -1237,7 +1237,7 @@ def add_improvement_information(model_to_latency):
             if trt_fp16 in value and cuda_fp16 in value:
                 gain = calculate_gain(value, trt_fp16, cuda_fp16)
                 value[trt_cuda_fp16_gain] = "{:.2f} %".format(gain)
-        if "ORT-TRT" in value and is_standalone(value):
+        if "ORT-TRT" in value and standalone_trt in value:
             gain = calculate_gain(value, trt, standalone_trt)
             value[trt_native_gain] = "{:.2f} %".format(gain)
             if trt_fp16 in value and standalone_trt_fp16 in value:
