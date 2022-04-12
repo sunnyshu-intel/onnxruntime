@@ -2,11 +2,11 @@ trigger: none
 
 variables:
   - name: isMain
-    value: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
+    value: ${{ eq(variables['Build.SourceBranch'], 'refs/heads/master') }}
   - name: finalStorage
-    $[ if isMain ]:
+    ${{ if isMain }}:
       value: '--final_storage'
-    $[ else ]:
+    ${{ else }}:
       value: ''
 
 stages:
