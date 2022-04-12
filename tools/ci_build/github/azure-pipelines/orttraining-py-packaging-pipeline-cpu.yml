@@ -2,10 +2,10 @@ trigger: none
 
 variables:
   - name: finalStorage
-    $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]:
+    $[ if eq(variables['Build.SourceBranch'], 'refs/heads/master') ]:
       value: '--final_storage'
-    $[nq(variables['Build.SourceBranch'], 'refs/heads/main')]:
-      value: ~
+    $[ if nq(variables['Build.SourceBranch'], 'refs/heads/master') ]:
+      value: ''
 
 stages:
 - stage: Python_Packaging
