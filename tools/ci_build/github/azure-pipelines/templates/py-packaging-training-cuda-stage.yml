@@ -47,11 +47,13 @@ parameters:
   default: ''
 
 variables:
+  - name: isMain
+    value: ${{ eq(variables['Build.SourceBranch'], 'refs/heads/master') }}
   - name: finalStorage
-    $[ if eq(variables['Build.SourceBranch'], 'refs/heads/master') ]:
+    ${{ if variables['isMain'] }}:
       value: '--final_storage'
-    $[ if nq(variables['Build.SourceBranch'], 'refs/heads/master') ]:
-      value: ''
+    ${{ else }}:
+      value: '''
 
 stages:
 - stage: Python_Packaging

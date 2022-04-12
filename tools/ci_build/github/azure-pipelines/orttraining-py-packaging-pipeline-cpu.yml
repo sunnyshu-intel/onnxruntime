@@ -87,14 +87,14 @@ stages:
           ArtifactName: onnxruntime_training_cpu
 
       - task: CmdLine@2
-        condition: and (succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+        condition: succeeded()
         displayName: 'Upload wheel'
         inputs:
           script: |
             files=($(Build.ArtifactStagingDirectory)/Release/dist/*.whl) && \
             echo ${files[0]} && \
             tools/ci_build/upload_python_package_to_azure_storage.py \
-                --python_wheel_path ${files[0]}  $[variables['finalStorage']]
+                --python_wheel_path ${files[0]} ${{ variables['finalStorage'] }}
 
       - template: templates/component-governance-component-detection-steps.yml
         parameters:
