@@ -1,9 +1,8 @@
 trigger: none
 
 variables:
-  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
   - name: finalStorage
-    $[ if variables['isMain'] ]:
+    $[ if eq(variables['Build.SourceBranch'], 'refs/heads/master') ]:
       value: '--final_storage'
     $[ else ]:
       value: ''
