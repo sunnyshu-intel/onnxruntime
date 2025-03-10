@@ -10,6 +10,8 @@
 #include "core/framework/tensorprotoutils.h"
 #include "core/framework/tensor_external_data_info.h"
 #include "core/platform/env.h"
+#include "core/mlas/inc/mlas.h"
+#include "core/common/cpuid_info.h"
 
 namespace onnxruntime {
 
@@ -125,6 +127,109 @@ struct TensorToProtoBFloat16 {
   }
 };
 
+template <typename T>
+struct ToFloat32;
+
+template <>
+struct ToFloat32<float> {
+  float operator()(const float& f) const {
+    return f;
+  }
+};
+
+template <>
+struct ToFloat32<double> {
+  float operator()(double d) const {
+    return static_cast<float>(d);
+  }
+};
+
+template <>
+struct ToFloat32<BFloat16> {
+  float operator()(BFloat16 bf) const {
+    return static_cast<float>(bf);
+  }
+};
+
+template <>
+struct ToFloat32<MLFloat16> {
+  float operator()(MLFloat16 hf) const {
+    return static_cast<float>(hf);
+  }
+};
+
+template <typename T>
+struct TensorToProtoFloat32 {
+  void operator()(const Tensor& data, ONNX_NAMESPACE::TensorProto& proto, onnxruntime::concurrency::ThreadPool* /*thread_pool*/) const {
+    auto span = data.DataAsSpan<T>();
+    ToFloat32<T> to_float32;
+    for (const auto& v : span) {
+      proto.add_float_data(to_float32(v));
+    }
+  }
+};
+
+
+template <>
+struct TensorToProtoFloat32<MLFloat16> {
+
+  void operator()(const Tensor& data,
+                  ONNX_NAMESPACE::TensorProto& proto,
+                  onnxruntime::concurrency::ThreadPool* thread_pool) const {
+
+    // NOTE: This logic is directly taken from a different PR.
+    // PR: https://github.com/microsoft/onnxruntime/pull/23619
+    // We will consolidate this logic with the said PR once it
+    // is accepted.
+    auto source = reinterpret_cast<const MLFloat16*>(data.DataRaw());
+    auto count = size_t(data.SizeInBytes() / sizeof(MLFloat16));
+    auto destination_mem = std::make_unique<float[]>(count);
+    auto destination = destination_mem.get();
+
+    // Check if the tensor is long enough to use threads
+    // Check if thread_pool is available
+    // If not, execute single threaded conversion of half to float
+    if (!((count > 128000) && thread_pool)) {
+        MlasConvertHalfToFloatBuffer(source, destination, count);
+    }
+    else {
+
+        // Calculate the number of compute cycles per implementation
+        auto cpuid_info = CPUIDInfo::GetCPUIDInfo();
+        size_t num_compute_cycles;
+        if (cpuid_info.HasSSE3()) {
+            num_compute_cycles = count >> 1;
+        } else if (cpuid_info.HasAVX2()) {
+            num_compute_cycles = count >> 2;
+        } else {
+            num_compute_cycles = count * 10;
+        }
+
+        const TensorOpCost tensor_op_cost = {
+            static_cast<double>(count * sizeof(MLFloat16)),  // Size of no. of elements in bytes to be loaded
+            static_cast<double>(count * sizeof(float)),      // Size of no. of elements in bytes to be stored
+            static_cast<double>(num_compute_cycles)          // Required No. of compute cycles
+        };
+
+        // Make Lambda function required by TryParallelFor method
+        auto mlas_convert_half_to_float_in_parallel = [source, destination]
+                                                      (std::ptrdiff_t first_span, std::ptrdiff_t last_span) {
+                                                        MlasConvertHalfToFloatBuffer(
+                                                            source + first_span,
+                                                            destination + first_span,
+                                                            static_cast<size_t>(last_span - first_span));
+                                                      };
+
+        // Call TryParallelFor
+        onnxruntime::concurrency::ThreadPool::TryParallelFor(thread_pool, count, tensor_op_cost,
+                                                             mlas_convert_half_to_float_in_parallel);
+    }
+
+    // Copy Data from Destination mem to Proto buffer
+    utils::SetRawDataInTensorProto(proto, destination, count * sizeof(float));
+  }
+};
+
 inline void SetNameDims(const std::string& name,
                         gsl::span<const int64_t> dims,
                         ONNX_NAMESPACE::TensorProto_DataType dt,
@@ -152,6 +257,14 @@ ONNX_NAMESPACE::TensorProto Initializer::ToBFloat16(const std::string& name) con
   SetNameDims(name, data_.Shape().GetDims(), ONNX_NAMESPACE::TensorProto_DataType_BFLOAT16, tensor_proto);
   utils::MLTypeCallDispatcher<BFloat16, float, double> t_disp(data_.GetElementType());
   t_disp.Invoke<TensorToProtoBFloat16>(data_, tensor_proto);
+  return tensor_proto;
+}
+
+ONNX_NAMESPACE::TensorProto Initializer::ToFloat32(const std::string& name, onnxruntime::concurrency::ThreadPool* thread_pool) const {
+  ONNX_NAMESPACE::TensorProto tensor_proto;
+  SetNameDims(name, data_.Shape().GetDims(), ONNX_NAMESPACE::TensorProto_DataType_FLOAT, tensor_proto);
+  utils::MLTypeCallDispatcher<float, double, BFloat16, MLFloat16> t_disp(data_.GetElementType());
+  t_disp.Invoke<TensorToProtoFloat32>(data_, tensor_proto, thread_pool);
   return tensor_proto;
 }
 
